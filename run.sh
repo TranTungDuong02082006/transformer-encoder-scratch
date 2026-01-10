@@ -1,17 +1,17 @@
+%%writefile run.sh
 #!/bin/bash
 
 # 1. Script Configuration
-# set -e: Exit immediately if a command exits with a non-zero status.
-# This ensures we don't train on broken data if a previous step fails.
+# set -e: Dừng ngay lập tức nếu có lệnh bị lỗi
 set -e
 
-# Define colors for better logging visibility
+# Define colors for logging
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
-NC='\033[0m' # No Color (Reset)
+NC='\033[0m' # No Color
 
-# Helper functions for logging
+# Helper functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -30,53 +30,56 @@ echo "======================================================="
 echo "   🚀 STARTING BERT END-TO-END TRAINING PIPELINE"
 echo "======================================================="
 
-# --- STEP 1: DATA PROCESSING ---
-log_info "Step 1/5: Downloading and Processing Data..."
-# Run data.py to download Wikipedia, clean, and split the dataset
-python3 data.py
+# --- STEP 0: INSTALL DEPENDENCIES ---
+log_info "Step 0/6: Installing dependencies..."
+pip install -r requirements.txt
 if [ $? -eq 0 ]; then
-    log_success "Data processing completed."
+    log_success "Libraries installed successfully."
 else
-    log_error "Data processing failed."
+    log_error "Installation failed."
     exit 1
 fi
 
+# --- STEP 1: DATA PROCESSING ---
+log_info "Step 1/6: Downloading and Processing Data..."
+python3 data.py
+log_success "Data processing completed."
+
 # --- STEP 2: BUILD TOKENIZER ---
-log_info "Step 2/5: Building Tokenizer (Vocab)..."
-# Run tokenizer.py to build the vocabulary from the training set
-# Ensure 'save_path' matches the one defined in src/config.py
+log_info "Step 2/6: Building Tokenizer (Vocab)..."
+# Sử dụng tham số khớp với config của bạn
 python3 tokenizer.py \
-    --train_pkl "data/processed/train_wiki.pkl" \
+    --train_pkl "train_wiki.pkl" \
     --vocab_size 30000 \
-    --save_path "data/processed/vocab_wiki.json"
+    --save_path "vocab_wiki.json"
 
 log_success "Tokenizer built and vocab saved."
 
 # --- STEP 3: MODEL TRAINING ---
-log_info "Step 3/5: Training BERT Model..."
+log_info "Step 3/6: Training BERT Model..."
 echo "       (This may take a long time depending on your GPU resources...)"
-
-# Run train.py. 
-# It automatically loads hyperparameters from src/config.py
 python3 train.py
-
 log_success "Training process finished."
 
 # --- STEP 4: EVALUATION (METRICS) ---
-log_info "Step 4/5: Evaluating Model (Calculating PPL & Accuracy)..."
-# Evaluate on the Validation set and save the report to reports/eval_metrics.json
+log_info "Step 4/6: Evaluating Model (Calculating PPL & Accuracy)..."
 python3 eval.py --mode metrics
-
 log_success "Evaluation completed. Report saved to reports/eval_metrics.json"
 
-# --- STEP 5: DEMO (INFERENCE) ---
-log_info "Step 5/5: Running a quick demo..."
-TEST_SENTENCE="The capital of Vietnam is <mask> city ."
+# --- STEP 5: PLOTTING RESULTS ---
+log_info "Step 5/6: Plotting Training Graphs..."
+# Bước này sẽ đọc file CSV và vẽ biểu đồ đẹp
+python3 plot_results.py
+log_success "Graphs generated! Check 'reports/figures' folder."
+
+# --- STEP 6: DEMO (INFERENCE) ---
+log_info "Step 6/6: Running a quick demo..."
+TEST_SENTENCE="The capital of Vietnam is <mask > city ."
 echo "       Input: '$TEST_SENTENCE'"
 
-# Run a quick fill-mask test to verify the model visually
 python3 eval.py --mode demo --text "$TEST_SENTENCE"
 
 echo "======================================================="
 log_success "🎉 PIPELINE FINISHED SUCCESSFULLY!"
+echo "Check output files in: checkpoints/ and reports/figures/"
 echo "======================================================="

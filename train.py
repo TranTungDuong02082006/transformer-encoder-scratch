@@ -1,4 +1,5 @@
 import os
+import csv
 import sys
 import torch
 import torch.nn as nn
@@ -39,7 +40,7 @@ def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_st
     return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
-def train_step(model, dataloader, optimizer, criterion, scaler, scheduler, device, epoch, rank, accumulation_steps):
+def train_step(model, dataloader, optimizer, criterion, scaler, scheduler, device, epoch_idx, rank, accumulation_steps, log_path):
     model.train()
     total_loss = 0.0
     optimizer.zero_grad(set_to_none=True)
@@ -52,7 +53,7 @@ def train_step(model, dataloader, optimizer, criterion, scaler, scheduler, devic
         attention_mask = batch['attention_mask'].to(device, non_blocking=True)
         labels = batch['labels'].to(device, non_blocking=True)
 
-        with torch.cuda.amp.autocast(enabled=Config.use_amp):
+        with torch.amp.autocast('cuda', enabled=Config.use_amp):
             outputs = model(input_ids, attention_mask)
             loss = criterion(outputs.view(-1, outputs.size(-1)), labels.view(-1))
             loss = loss / accumulation_steps
@@ -74,7 +75,12 @@ def train_step(model, dataloader, optimizer, criterion, scaler, scheduler, devic
         if rank == 0 and i % 50 == 0:
             elapsed = time.time() - start_time
             lr = scheduler.get_last_lr()[0]
-            print(f"[Epoch {epoch}][Train Step {i}/{num_batches}] Loss: {current_loss:.4f} | LR: {lr:.2e} | Time: {elapsed:.1f}s")
+            global_step = (epoch_idx - 1) * len(dataloader) + i
+            print(f"[Epoch {epoch_idx}][Step {i}/{num_batches}] Loss: {current_loss:.4f} | LR: {lr:.2e} ...")
+            with open(log_path, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([global_step, epoch_idx, current_loss, lr])
+
             start_time = time.time()
             
     return total_loss / num_batches
@@ -91,7 +97,7 @@ def validate_step(model, dataloader, criterion, device, rank):
             attention_mask = batch['attention_mask'].to(device, non_blocking=True)
             labels = batch['labels'].to(device, non_blocking=True)
 
-            with torch.cuda.amp.autocast(enabled=Config.use_amp):
+            with torch.amp.autocast('cuda', enabled=Config.use_amp):
                 outputs = model(input_ids, attention_mask)
                 loss = criterion(outputs.view(-1, outputs.size(-1)), labels.view(-1))
             
@@ -159,29 +165,47 @@ def main_process(rank: int, world_size: int):
 
     optimizer = optim.AdamW(model.parameters(), lr=Config.lr, betas=(0.9, 0.999), weight_decay=Config.weight_decay)
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
-    scaler = torch.cuda.amp.GradScaler(enabled=Config.use_amp)
+    scaler = torch.amp.GradScaler('cuda', enabled=Config.use_amp)
     
     total_steps = (len(train_loader) // Config.accumulation_steps) * Config.epochs
     scheduler = get_linear_schedule_with_warmup(optimizer, Config.accumulation_steps, total_steps)
 
+    train_log_path = os.path.join(Config.CHECKPOINT_DIR, "train_logs.csv")
+    val_log_path = os.path.join(Config.CHECKPOINT_DIR, "val_logs.csv")
+
     if rank == 0:
         os.makedirs(Config.CHECKPOINT_DIR, exist_ok=True)
         print(f"--- Starting Training | Steps: {total_steps} ---")
+        
+        with open(train_log_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['global_step', 'epoch', 'train_loss', 'learning_rate'])
+            
+        with open(val_log_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['epoch', 'val_loss', 'perplexity'])
+    
 
     best_val_loss = float('inf')
+
+    global_step_counter = 0
 
     for epoch in range(1, Config.epochs + 1):
         if use_ddp: train_sampler.set_epoch(epoch)
         
         train_loss = train_step(
             model, train_loader, optimizer, criterion, scaler, scheduler, 
-            device, epoch, rank, Config.accumulation_steps
+            device, epoch, rank, Config.accumulation_steps, train_log_path
         )
         
         val_loss = validate_step(model, val_loader, criterion, device, rank)
         
         if rank == 0:
+            ppl = math.exp(val_loss) if val_loss < 100 else float('inf')
             print(f"Epoch {epoch} Done. Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+            with open(val_log_path, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([epoch, val_loss, ppl])
             
             save_checkpoint(model_without_ddp, optimizer, epoch, train_loss, 
                           os.path.join(Config.CHECKPOINT_DIR, f"bert_last.pt"))

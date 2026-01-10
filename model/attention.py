@@ -37,7 +37,7 @@ class MultiHeadAttention(nn.Module):
             if mask.dim() == 2:
                 mask = mask.unsqueeze(1).unsqueeze(2)
 
-            scores = scores.masked_fill(mask == 0, -1e9)
+            scores = scores.masked_fill(mask == 0, -1e4)
 
         attn_weights = F.softmax(scores, dim=-1)
         attn_weights = self.dropout(attn_weights)
