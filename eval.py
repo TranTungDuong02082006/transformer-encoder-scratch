@@ -65,9 +65,6 @@ def save_eval_report(metrics: dict, save_path: str):
     print(f"\nReport saved to: {save_path}")
 
 def evaluate_metrics(model, tokenizer, device, save_path: str = None):
-    """
-    Calculates Perplexity (PPL) and Masked Accuracy.
-    """
     print("\n--- Starting Metric Evaluation ---")
     
     try:
@@ -127,9 +124,6 @@ def evaluate_metrics(model, tokenizer, device, save_path: str = None):
         save_eval_report(metrics, save_path)
 
 def predict_mask(model, tokenizer, text: str, device: torch.device, top_k: int = 5):
-    """
-    Demo function: Uses the actual tokenizer to process input.
-    """
     model.eval()
     
     mask_token = "<mask >"

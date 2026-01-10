@@ -14,9 +14,6 @@ except ImportError:
 
 
 def clean_text(text: str) -> str:
-    """
-    Cleans raw text but KEEPS punctuation for model understanding.
-    """
     if not isinstance(text, str):
         return ""
     text = text.lower()
@@ -30,9 +27,6 @@ def load_raw_wikipedia_dataset(
     date: str = "20220301",
     num_samples: int = None
 ) -> List[str]:
-    """
-    Loads the Wikitext-103 dataset via Hugging Face.
-    """
     if load_dataset is None:
         raise ImportError("The 'datasets' library is not installed.")
         
@@ -64,7 +58,6 @@ def split_train_val_test_text_only(
     test_ratio: float = 0.01,
     seed: int = 42
 ) -> Tuple[List[str], List[str], List[str]]:
-    """Splits a list of pure texts into Train, Validation, and Test sets."""
     if not 0.99 <= (train_ratio + val_ratio + test_ratio) <= 1.01:
          print("Warning: Sum of split ratios is not 1.0")
          
@@ -104,9 +97,6 @@ def build_and_save_wikipedia_dataset(
     wiki_date: str = "20231101",
     num_samples: int = None
 ):
-    """
-    Executes the full pipeline: Load -> Clean -> Split -> Save.
-    """
     print("--- Starting Wikipedia Data Processing Pipeline ---")
     
     raw_data = load_raw_wikipedia_dataset(language=wiki_lang, date=wiki_date, num_samples=num_samples)
@@ -130,10 +120,6 @@ def build_and_save_wikipedia_dataset(
 
 
 class BERTDataset(Dataset):
-    """
-    Custom Dataset for BERT Masked Language Modeling (MLM).
-    Handles tokenization and dynamic masking on-the-fly.
-    """
     def __init__(self, data: List[str], tokenizer, max_len: int = 512, mask_prob: float = 0.15):
         self.data = data
         self.tokenizer = tokenizer 

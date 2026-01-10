@@ -5,9 +5,6 @@ import torch
 from typing import List, Tuple, Dict, Any
 
 def set_seed(seed: int):
-    """
-    Sets the random seed for reproducibility across various libraries.
-    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -22,9 +19,6 @@ def set_seed(seed: int):
     
     
 def get_device() -> torch.device:
-    """
-    Returns the available device: CUDA if available, else CPU.
-    """
     if torch.cuda.is_available():
         return torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -37,9 +31,6 @@ def count_parameters(model: torch.nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 class CollateBatch:
-    """
-    Instead of padding the entire dataset to a fixed length, this collator performs dynamic padding (speed up training and reduce memory usage).
-    """
     def __init__(self, pad_id: int):
         self.pad_id = pad_id
     

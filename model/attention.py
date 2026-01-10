@@ -5,9 +5,6 @@ from typing import Optional
 import math
 
 class MultiHeadAttention(nn.Module):
-    """
-    Manual Multi-Head Attention implementation.
-    """
     def __init__(self, d_model: int, num_heads: int, dropout: float = 0.1):
         super().__init__()
         assert d_model % num_heads == 0, f"d_model ({d_model}) must be divisible by num_heads ({num_heads})"

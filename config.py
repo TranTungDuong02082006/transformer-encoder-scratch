@@ -8,6 +8,7 @@ class Config:
     VOCAB_PATH = "data/processed/vocab_wiki.json"
     CHECKPOINT_DIR = "checkpoints"
     REPORT_PATH = "reports/eval_metrics.json"
+    load_model_path = "checkpoints/bert_best.pt"
 
     d_model = 512
     num_layers = 6

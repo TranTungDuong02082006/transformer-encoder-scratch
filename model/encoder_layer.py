@@ -20,10 +20,6 @@ class LayerNorm(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    """
-    Implements a single Encoder Block.
-    Input -> Self-Attention -> Dropout -> Add & Norm -> Feed-Forward -> Dropout -> Add & Norm
-    """
     def __init__(self, d_model: int, num_heads: int, d_ff: int, dropout: float = 0.1):
         super().__init__()
         

@@ -136,13 +136,15 @@ def main_process(rank: int, world_size: int):
     train_loader = DataLoader(
         train_dataset, batch_size=Config.batch_size, shuffle=(train_sampler is None),
         sampler=train_sampler, num_workers=4 if platform.system() != 'Windows' else 0,
-        pin_memory=True, persistent_workers=(True if platform.system() != 'Windows' else False)
+        pin_memory=True, persistent_workers=(True if platform.system() != 'Windows' else False),
+        drop_last=True 
     )
     
     val_loader = DataLoader(
         val_dataset, batch_size=Config.batch_size, shuffle=False,
         sampler=val_sampler, num_workers=2 if platform.system() != 'Windows' else 0,
-        pin_memory=True
+        pin_memory=True,
+        drop_last=True
     )
 
     encoder = TransformerEncoder(
@@ -153,9 +155,22 @@ def main_process(rank: int, world_size: int):
     model = BERTLanguageModel(encoder, d_model=Config.d_model, vocab_size=len(tokenizer)).to(device)
     model.tie_weights()
 
-    if hasattr(torch, "compile"):
-        print(f"[Rank {rank}] Compiling model...")
-        model = torch.compile(model)
+    if hasattr(Config, 'load_model_path') and Config.load_model_path and os.path.exists(Config.load_model_path):
+        if rank == 0:
+            print(f"[Rank {rank}] Loading model from: {Config.load_model_path}")
+        
+        checkpoint = torch.load(Config.load_model_path, map_location='cpu')
+        
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        else:
+            model.load_state_dict(checkpoint, strict=False)
+            
+        if rank == 0:
+            print(f"[Rank {rank}] Load model completed!")
+    else:
+        if rank == 0:
+            print(f"[Rank {rank}] Checkpoint not existed.")
 
     if use_ddp:
         model = DDP(model, device_ids=[rank])
@@ -177,18 +192,18 @@ def main_process(rank: int, world_size: int):
         os.makedirs(Config.CHECKPOINT_DIR, exist_ok=True)
         print(f"--- Starting Training | Steps: {total_steps} ---")
         
-        with open(train_log_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['global_step', 'epoch', 'train_loss', 'learning_rate'])
+        if not os.path.exists(train_log_path):
+            with open(train_log_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['global_step', 'epoch', 'train_loss', 'learning_rate'])
             
-        with open(val_log_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['epoch', 'val_loss', 'perplexity'])
+        if not os.path.exists(val_log_path):
+            with open(val_log_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['epoch', 'val_loss', 'perplexity'])
     
 
     best_val_loss = float('inf')
-
-    global_step_counter = 0
 
     for epoch in range(1, Config.epochs + 1):
         if use_ddp: train_sampler.set_epoch(epoch)

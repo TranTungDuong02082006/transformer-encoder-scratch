@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 
 class BERTLanguageModel(nn.Module):
-    """
-    Wrapper around TransformerEncoder for BERT-style Masked Language Modeling.
-    """
     def __init__(self, encoder, d_model: int, vocab_size: int):
         super().__init__()
         self.encoder = encoder

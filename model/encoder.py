@@ -6,10 +6,6 @@ from .encoder_layer import EncoderLayer
 from torch.utils.checkpoint import checkpoint
 
 class TransformerEncoder(nn.Module):
-    """
-    Implements full Transformer Encoder model.
-    Optimized with Gradient Checkpointing option.
-    """
     def __init__(
         self,
         vocab_size: int,

@@ -4,7 +4,6 @@ REM =======================================================
 REM WINDOWS TRAINING PIPELINE FOR BERT
 REM =======================================================
 
-REM Set encoding to UTF-8 to display special characters
 chcp 65001 > NUL
 
 echo =======================================================
