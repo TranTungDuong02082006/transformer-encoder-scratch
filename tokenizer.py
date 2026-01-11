@@ -1,227 +1,194 @@
+%%writefile tokenizer.py
 import os
-import json
 import re
+import json
 import pickle
-from collections import Counter
-from typing import List, Dict, Tuple, Optional
+from collections import Counter, defaultdict
 
-# --- 1. SPECIAL TOKENS AND DEFAULTS ---
-PAD_TOKEN = "<pad>"
 UNK_TOKEN = "<unk>"
+PAD_TOKEN = "<pad>"
 CLS_TOKEN = "<cls>"
 SEP_TOKEN = "<sep>"
 MASK_TOKEN = "<mask>"
 
-PAD_ID = 0
-UNK_ID = 1
-CLS_ID = 2
-SEP_ID = 3
-MASK_ID = 4
+class WordPieceTokenizer:
+    def __init__(self, vocab=None):
+        self.vocab = vocab if vocab else {}
+        self.id_to_token = {v: k for k, v in self.vocab.items()}
+        self.max_token_len = max(len(t) for t in self.vocab.keys()) if self.vocab else 0
 
-DEFAULT_VOCAB_SIZE = 30000
-DEFAULT_SAVE_PATH = "data/processed/vocab_wiki.json"
+    def load_vocab(self, vocab_path):
+        with open(vocab_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if "token_to_id" in data:
+                self.vocab = data["token_to_id"]
+            else:
+                self.vocab = data
+        self.id_to_token = {v: k for k, v in self.vocab.items()}
+        self.max_token_len = max(len(t) for t in self.vocab.keys()) if self.vocab else 0
 
-# --- 2. NORMALIZE AND TOKENIZER ---
-def tokenize(text: str) -> List[str]:
-    if text is None:
-        return []
-    
-    text = text.lower()
-    tokens = re.findall(r"\w+|[^\w\s]", text, re.UNICODE)
-    return tokens
+    def basic_tokenize(self, text):
+        text = text.lower().strip()
+        tokens = re.findall(r"\w+|[^\w\s]", text, re.UNICODE)
+        return tokens
 
-# --- 3. VOCABULARY UTILITIES ---
-
-def build_vocab_from_train(
-    train_pkl_path: str,
-    vocab_size: int = DEFAULT_VOCAB_SIZE,
-    save_path: str = DEFAULT_SAVE_PATH,
-    min_freq: int = 1,
-    verbose: bool = True,
-) -> Dict[str, int]:
-    if not os.path.exists(train_pkl_path):
-        raise FileNotFoundError(f"Train pickle file not found: {train_pkl_path}")
-    
-    with open(train_pkl_path, "rb") as f:
-        train_data = pickle.load(f)
-        
-    # count token frequencies
-    counter = Counter()
-    for text in train_data: 
-        tokens = tokenize(text)
-        counter.update(tokens)
-        
-    # Filter tokens below min_freq
-    if min_freq > 1:
-        counter = Counter({tok: count for tok, count in counter.items() if count >= min_freq})
-                
-    # Determine how many tokens can keep beyond specials
-    n_specials = 5 # PAD, UNK, CLS, SEP, MASK
-    n_keep = max(0, vocab_size - n_specials)
-    
-    # Select top-n_keep tokens by frequency
-    most_common = counter.most_common(n_keep)
-    kept_tokens = [tok for tok, _ in most_common]
-    
-    # Build token -> id mapping, reserving ids for special tokens first
-    token_to_id: Dict[str, int] = {}
-    token_to_id[PAD_TOKEN] = PAD_ID
-    token_to_id[UNK_TOKEN] = UNK_ID
-    token_to_id[CLS_TOKEN] = CLS_ID
-    token_to_id[SEP_TOKEN] = SEP_ID
-    token_to_id[MASK_TOKEN] = MASK_ID
-    
-    next_id = n_specials
-    for tok in kept_tokens:
-        token_to_id[tok] = next_id
-        next_id += 1
-        
-    # Save vocab to JSON
-    os.makedirs(os.path.dirname(save_path), exist_ok = True)
-    save_vocab(token_to_id, save_path, verbose=verbose)
-    
-    if verbose:
-        print(f"Built vocab size (including specials): {len(token_to_id)}")
-        if len(token_to_id) < vocab_size:
-            print(f"Warning: requested vocab_size={vocab_size} but only {len(token_to_id)} tokens available.")
-    return token_to_id
-
-
-def save_vocab(token_to_id: Dict[str, int], save_path: str = DEFAULT_SAVE_PATH, verbose: bool = True):
-    id_to_token = {str(v): k for k, v in token_to_id.items()}
-    payload = {"token_to_id": token_to_id, "id_to_token": id_to_token}
-    with open(save_path, "w", encoding="utf-8") as fout:
-        json.dump(payload, fout, ensure_ascii=False, indent=2)
-    if verbose:
-        print(f"Saved vocab to: {save_path}")
-        
-        
-def load_vocab(vocab_path: str = DEFAULT_SAVE_PATH) -> Tuple[Dict[str, int], Dict[int, str]]:
-    if not os.path.exists(vocab_path):
-        raise FileNotFoundError(f"Vocab file not found: {vocab_path}")
-    with open(vocab_path, "r", encoding='utf-8') as fin:
-        payload = json.load(fin)
-    token_to_id = payload.get("token_to_id", {})
-    id_to_token_raw = payload.get("id_to_token", {})
-    
-    # Convert id keys back to int
-    id_to_token: Dict[int, str] = {int(k): v for k, v in id_to_token_raw.items()}
-    return token_to_id, id_to_token
-
-
-def encode(
-    text: str,
-    token_to_id: Dict[str, int],
-    max_len: Optional[int] = None,
-    add_cls: bool = True,
-    add_sep: bool = True,
-    pad_to_max_len: bool = True,
-) -> Tuple[List[int], List[int]]:
-        
-    tokens = tokenize(text)
-    ids = [token_to_id.get(tok, UNK_ID) for tok in tokens]
-        
-    special_tokens_count = 0
-    if add_cls: special_tokens_count += 1
-    if add_sep: special_tokens_count += 1
-    
-    if max_len:
-        allowed_text_len = max_len - special_tokens_count
-        ids = ids[:allowed_text_len]
-    
-    input_ids = []
-    if add_cls:
-        input_ids.append(CLS_ID)
-    
-    input_ids.extend(ids)
-    
-    if add_sep:
-        input_ids.append(SEP_ID)
-        
-    seq_len = len(input_ids)
-    
-    if pad_to_max_len and max_len is not None:
-        if seq_len < max_len:
-            pad_length = max_len - seq_len
-            input_ids = input_ids + [PAD_ID] * pad_length
-            attention_mask = [1] * seq_len + [0] * pad_length
-        else:
-            input_ids = input_ids[:max_len]
-            attention_mask = [1] * max_len
-    else:
-        attention_mask = [1] * seq_len
-    
-    return input_ids, attention_mask
-
-
-def decode(
-    ids: List[int],
-    id_to_token: Optional[Dict[int, str]] = None,
-    skip_specials_tokens: bool =True,
-    join_with: str = " ",
-) -> str:
-    if id_to_token is None:
-        toks = [f"<{i}>" for i in ids]
-        return join_with.join(toks)
-    
-    tokens = []
-    for i in ids:
-        tok = id_to_token.get(i, UNK_TOKEN)
-        if skip_specials_tokens and tok in {PAD_TOKEN, CLS_TOKEN}: 
-            continue
-        if skip_specials_tokens and tok == UNK_TOKEN:
-            continue
+    def encode_word(self, word):
+        tokens = []
+        start = 0
+        while start < len(word):
+            end = len(word)
+            cur_substr = None
             
-        tokens.append(tok)
-    return join_with.join(tokens)
+            if end - start > self.max_token_len:
+                end = start + self.max_token_len
+
+            while start < end:
+                substr = word[start:end]
+                if start > 0:
+                    substr = "##" + substr
+                
+                if substr in self.vocab:
+                    cur_substr = substr
+                    break
+                end -= 1
+            
+            if cur_substr is None:
+                return [UNK_TOKEN]
+            
+            tokens.append(cur_substr)
+            start = end 
+            
+        return tokens
+
+    def encode(self, text):
+        basic_tokens = self.basic_tokenize(text)
+        subword_tokens = []
+        
+        for token in basic_tokens:
+            if token in self.vocab:
+                subword_tokens.append(token)
+            else:
+                subword_tokens.extend(self.encode_word(token))
+                
+        ids = [self.vocab.get(t, self.vocab.get(UNK_TOKEN)) for t in subword_tokens]
+        return subword_tokens, ids
+
+    def decode(self, ids):
+        tokens = [self.id_to_token.get(i, UNK_TOKEN) for i in ids]
+        text = ""
+        for t in tokens:
+            if t in [PAD_TOKEN, CLS_TOKEN, SEP_TOKEN, MASK_TOKEN]:
+                continue
+            if t.startswith("##"):
+                text += t[2:]
+            else:
+                text += " " + t
+        return text.strip()
 
 
-def build_vocab_entrypoint(
-    train_pkl_path: str = "data/processed/train_wiki.pkl",
-    vocab_size: int = DEFAULT_VOCAB_SIZE,
-    save_path: str = DEFAULT_SAVE_PATH
-):
-    token_to_id = build_vocab_from_train(
-        train_pkl_path=train_pkl_path,
-        vocab_size=vocab_size,
-        save_path=save_path,
-        min_freq=1,
-        verbose=True,
-    )
-    return token_to_id
+def get_stats(vocab):
+    pairs = defaultdict(int)
+    for word, freq in vocab.items():
+        symbols = word.split()
+        for i in range(len(symbols) - 1):
+            pairs[symbols[i], symbols[i+1]] += freq
+    return pairs
+
+def merge_vocab(pair, v_in):
+    v_out = {}
+    bigram = re.escape(' '.join(pair))
+    p = re.compile(r'(?<!\S)' + bigram + r'(?!\S)')
     
+    first, second = pair
+    if second.startswith("##"):
+        second_stripped = second[2:]
+    else:
+        second_stripped = second
+        
+    combined_token = first + second_stripped
     
+    for word in v_in:
+        w_out = p.sub(combined_token, word)
+        v_out[w_out] = v_in[word]
+        
+    return v_out, combined_token
+
+def train_tokenizer_bpe(train_pkl_path, vocab_size, save_path):
+    print(f"--- Training Tokenizer (Pure Python) | Format: <unk>, ##subword ---")
+    
+    if not os.path.exists(train_pkl_path):
+        print(f"Error: Not found {train_pkl_path}")
+        return
+
+    with open(train_pkl_path, "rb") as f:
+        dataset = pickle.load(f)
+
+    print("1. Counting word frequencies...")
+    word_freqs = Counter()
+    tokenizer_dummy = WordPieceTokenizer()
+    
+    LIMIT_SENTENCES = 50000 
+    for i, text in enumerate(dataset):
+        if i >= LIMIT_SENTENCES: break
+        words = tokenizer_dummy.basic_tokenize(text)
+        for w in words:
+            word_freqs[w] += 1
+            
+    vocab_train = {}
+    for word, freq in word_freqs.items():
+        if len(word) == 1:
+            vocab_train[word] = freq
+        else:
+            chars = [word[0]] + ["##" + c for c in word[1:]]
+            vocab_train[" ".join(chars)] = freq
+
+    base_vocab = {PAD_TOKEN, UNK_TOKEN, CLS_TOKEN, SEP_TOKEN, MASK_TOKEN}
+    for word in vocab_train:
+        for char in word.split():
+            base_vocab.add(char)
+            
+    num_merges = vocab_size - len(base_vocab)
+    print(f"Base vocab size: {len(base_vocab)}. Merging {num_merges} times (Running BPE)...")
+    
+    for i in range(num_merges):
+        pairs = get_stats(vocab_train)
+        if not pairs:
+            print("No more pairs to merge.")
+            break
+            
+        best = max(pairs, key=pairs.get)
+        
+        vocab_train, new_token = merge_vocab(best, vocab_train)
+        
+        base_vocab.add(new_token)
+        
+        if (i + 1) % 100 == 0:
+            print(f"Merge {i+1}/{num_merges}: {best} -> {new_token}")
+
+    print("Assigning IDs (Deterministic Sort)...")
+    
+    specials = [PAD_TOKEN, UNK_TOKEN, CLS_TOKEN, SEP_TOKEN, MASK_TOKEN]
+    final_vocab = {k: i for i, k in enumerate(specials)}
+    idx = len(specials)
+    
+    sorted_tokens = sorted(list(base_vocab))
+    
+    for token in sorted_tokens:
+        if token not in final_vocab:
+            final_vocab[token] = idx
+            idx += 1
+            
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(final_vocab, f, ensure_ascii=False, indent=2)
+        
+    print(f"--- Done! Vocab saved to {save_path} (Size: {len(final_vocab)}) ---")
+
 if __name__ == "__main__":
     import argparse
-
-    parser = argparse.ArgumentParser(description="Build/load tokenizer vocab")
-    parser.add_argument("--train_pkl", type=str, default="data/processed/train_wiki.pkl", help="Path to train_wiki.pkl")
-    parser.add_argument("--vocab_size", type=int, default=30000, help="Target vocab size (including specials)")
-    parser.add_argument("--save_path", type=str, default=DEFAULT_SAVE_PATH, help="Path to save vocab_wiki.json")
-    parser.add_argument("--test_encode", action="store_true", help="Run a sample encode/decode test after building vocab")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train_pkl", type=str, default="train_wiki.pkl")
+    parser.add_argument("--vocab_size", type=int, default=30000)
+    parser.add_argument("--save_path", type=str, default="vocab_wiki.json")
     args = parser.parse_args()
 
-    # 1. Build Vocab
-    print("--- Building Vocabulary ---")
-    tok2id = build_vocab_entrypoint(train_pkl_path=args.train_pkl, vocab_size=args.vocab_size, save_path=args.save_path)
-
-    # 2. Load and Test
-    print("\n--- Testing Encode/Decode ---")
-    try:
-        token_to_id, id_to_token = load_vocab(args.save_path)
-    except FileNotFoundError:
-        print(f"Error: Vocab file not found at {args.save_path}. Cannot test encode/decode.")
-        exit()
-
-    if args.test_encode:
-        max_len_test = 32
-        sample = "The new Apple iPhone 16 Pro Max has 8GB RAM, 1TB SSD, and 5G connectivity."
-        
-        ids, mask = encode(sample, token_to_id, max_len=max_len_test, add_cls=True, pad_to_max_len=True)
-        print(f"Sample: \"{sample}\"")
-        print(f"Max Len: {max_len_test}")
-        print("Tokens (after tokenization):", tokenize(sample))
-        print("Input IDs:", ids)
-        print("Attention Mask:", mask)
-        decoded = decode(ids, id_to_token, skip_specials_tokens=True)
-        print("Decoded (skip specials):", decoded)
+    train_tokenizer_bpe(args.train_pkl, args.vocab_size, args.save_path)
