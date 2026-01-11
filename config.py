@@ -11,7 +11,7 @@ class Config:
     load_model_path = "checkpoints/bert_best.pt"
 
     d_model = 512
-    num_layers = 6
+    num_layers = 8
     num_heads = 8
     d_ff = 2048
     max_len = 256
