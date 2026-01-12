@@ -35,8 +35,8 @@ class TransformerEmbedding(nn.Module):
         
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         x = self.token_embedding(input_ids)
-        x.mul_(math.sqrt(self.d_model))
-        x = self.position_embedding(x)
-        x = self.LayerNorm(x)
+        x = x + self.position_embedding.pe[:, :x.size(1), :]
         
+        x = self.position_embedding.dropout(x)
+        x = self.LayerNorm(x)
         return x
