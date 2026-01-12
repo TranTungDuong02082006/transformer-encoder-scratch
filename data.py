@@ -166,7 +166,7 @@ class BERTDataset(Dataset):
         input_ids[indices_replaced] = self.mask_token_id
 
         indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-        random_words = torch.randint(4, self.vocab_size, labels.shape, dtype=torch.long)
+        random_words = torch.randint(5, self.vocab_size, labels.shape, dtype=torch.long)
         input_ids[indices_random] = random_words[indices_random]
         attention_mask = (input_ids != self.pad_token_id).long()
         
