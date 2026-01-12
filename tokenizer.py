@@ -1,4 +1,3 @@
-%%writefile tokenizer.py
 import os
 import re
 import json
@@ -186,9 +185,9 @@ def train_tokenizer_bpe(train_pkl_path, vocab_size, save_path):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_pkl", type=str, default="train_wiki.pkl")
+    parser.add_argument("--train_pkl", type=str, default="data/processed/train_wiki.pkl")
     parser.add_argument("--vocab_size", type=int, default=30000)
-    parser.add_argument("--save_path", type=str, default="vocab_wiki.json")
+    parser.add_argument("--save_path", type=str, default="data/processed/vocab_wiki.json")
     args = parser.parse_args()
 
     train_tokenizer_bpe(args.train_pkl, args.vocab_size, args.save_path)

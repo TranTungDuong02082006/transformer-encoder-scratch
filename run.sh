@@ -1,4 +1,3 @@
-%%writefile run.sh
 set -e
 
 GREEN='\033[0;32m'
@@ -36,11 +35,7 @@ python3 data.py
 log_success "Data processing completed."
 
 log_info "Step 2/6: Building Tokenizer (Vocab)..."
-python3 tokenizer.py \
-    --train_pkl "train_wiki.pkl" \
-    --vocab_size 30000 \
-    --save_path "vocab_wiki.json"
-
+python3 tokenizer.py
 log_success "Tokenizer built and vocab saved."
 
 log_info "Step 3/6: Training BERT Model..."

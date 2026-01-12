@@ -1,4 +1,3 @@
-%%writefile run.bat
 @echo off
 REM =======================================================
 REM WINDOWS TRAINING PIPELINE FOR BERT

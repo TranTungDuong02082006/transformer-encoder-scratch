@@ -126,27 +126,28 @@ class BERTDataset(Dataset):
         self.max_len = max_len
         self.mask_prob = mask_prob
 
-        self.pad_token_id = tokenizer.pad_token_id
-        self.mask_token_id = tokenizer.mask_token_id
-        self.cls_token_id = tokenizer.cls_token_id
-        self.sep_token_id = tokenizer.sep_token_id
-
-        if self.cls_token_id is None: self.cls_token_id = tokenizer.token_to_id("[CLS]")
-        if self.sep_token_id is None: self.sep_token_id = tokenizer.token_to_id("[SEP]")
+        self.pad_token_id = tokenizer.token_to_id("<pad>")
+        self.mask_token_id = tokenizer.token_to_id("<mask>")
+        self.cls_token_id = tokenizer.token_to_id("<cls>")
+        self.sep_token_id = tokenizer.token_to_id("<sep>")
+        self.vocab_size = tokenizer.get_vocab_size()
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         text = self.data[idx]
-        
-        token_ids = self.tokenizer.encode(text).ids
 
-        if len(token_ids) > self.max_len:
-            token_ids = token_ids[:self.max_len]
-        else:
-            token_ids = token_ids + [self.pad_token_id] * (self.max_len - len(token_ids))
+        token_ids = self.tokenizer.encode(text).ids
+        
+        if len(token_ids) > self.max_len - 2:
+            token_ids = token_ids[:(self.max_len - 2)]
             
+        token_ids = [self.cls_token_id] + token_ids + [self.sep_token_id]
+
+        padding_len = self.max_len - len(token_ids)
+        token_ids = token_ids + [self.pad_token_id] * padding_len
+        
         input_ids = torch.tensor(token_ids, dtype=torch.long)
         labels = input_ids.clone()
         
@@ -155,19 +156,18 @@ class BERTDataset(Dataset):
         special_tokens_mask = (input_ids == self.pad_token_id) | \
                               (input_ids == self.cls_token_id) | \
                               (input_ids == self.sep_token_id)
-                              
         probability_matrix.masked_fill_(special_tokens_mask, value=0.0)
         
         masked_indices = torch.bernoulli(probability_matrix).bool()
-        labels[~masked_indices] = -100
-
+        
+        labels[~masked_indices] = -100 
+        
         indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
         input_ids[indices_replaced] = self.mask_token_id
 
         indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-        random_words = torch.randint(len(self.tokenizer), labels.shape, dtype=torch.long)
+        random_words = torch.randint(4, self.vocab_size, labels.shape, dtype=torch.long)
         input_ids[indices_random] = random_words[indices_random]
-
         attention_mask = (input_ids != self.pad_token_id).long()
         
         return {
