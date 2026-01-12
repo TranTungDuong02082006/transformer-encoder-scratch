@@ -3,6 +3,7 @@ import re
 import json
 import pickle
 from collections import Counter, defaultdict
+from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders, processors
 
 UNK_TOKEN = "<unk>"
 PAD_TOKEN = "<pad>"
@@ -28,7 +29,14 @@ class WordPieceTokenizer:
 
     def basic_tokenize(self, text):
         text = text.lower().strip()
-        tokens = re.findall(r"\w+|[^\w\s]", text, re.UNICODE)
+        pattern = r"(<pad>|<unk>|<cls>|<sep>|<mask>)|(\w+|[^\w\s])"
+        matches = re.findall(pattern, text, re.UNICODE)
+        tokens = []
+        for match in matches:
+            token = match[0] if match[0] else match[1]
+            if token:
+                tokens.append(token)
+                
         return tokens
 
     def encode_word(self, word):
@@ -181,6 +189,39 @@ def train_tokenizer_bpe(train_pkl_path, vocab_size, save_path):
         json.dump(final_vocab, f, ensure_ascii=False, indent=2)
         
     print(f"--- Done! Vocab saved to {save_path} (Size: {len(final_vocab)}) ---")
+    
+def train_tokenizer_fast(train_pkl_path, vocab_size, save_path):
+    print(f"--- Training Tokenizer (Using HuggingFace Tokenizers Fast) ---")
+
+    import pickle
+    if not os.path.exists(train_pkl_path):
+        print(f"Error: Not found {train_pkl_path}")
+        return
+    
+    with open(train_pkl_path, "rb") as f:
+        dataset = pickle.load(f) # List[str]
+    
+    print(f"Loaded {len(dataset)} sentences. Starting BPE training...")
+    
+    tokenizer = Tokenizer(models.WordPiece(unk_token="<unk>"))
+
+    tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
+    
+    special_tokens = ["<pad>", "<unk>", "<cls>", "<sep>", "<mask>"]
+    trainer = trainers.WordPieceTrainer(
+        vocab_size=vocab_size, 
+        special_tokens=special_tokens,
+        min_frequency=2,
+        show_progress_bar=True
+    )
+
+    tokenizer.train_from_iterator(dataset, trainer=trainer)
+    print("Saving vocab...")
+    vocab = tokenizer.get_vocab()
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(vocab, f, ensure_ascii=False, indent=2)
+        
+    print(f"--- Done! Vocab saved to {save_path} (Size: {len(vocab)}) ---")
 
 if __name__ == "__main__":
     import argparse
@@ -190,4 +231,4 @@ if __name__ == "__main__":
     parser.add_argument("--save_path", type=str, default="data/processed/vocab_wiki.json")
     args = parser.parse_args()
 
-    train_tokenizer_bpe(args.train_pkl, args.vocab_size, args.save_path)
+    train_tokenizer_fast(args.train_pkl, args.vocab_size, args.save_path)
