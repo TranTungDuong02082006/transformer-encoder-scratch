@@ -3,6 +3,7 @@ import re
 import random
 import pickle
 import torch
+import string
 from torch.utils.data import Dataset
 from typing import List, Tuple, Dict, Any
 
@@ -13,14 +14,17 @@ except ImportError:
     load_dataset = None 
 
 
+VALID_CHARS = set(string.ascii_letters + string.digits + string.punctuation + " \n")
+
 def clean_text(text: str) -> str:
     if not isinstance(text, str):
         return ""
-    text = text.lower()
+
     text = re.sub(r"<.*?>", " ", text)
+    text = "".join([c for c in text if c in VALID_CHARS])
     text = re.sub(r"\s+", " ", text)
-    text = "".join([c for c in text if c.isprintable()])
-    return text.strip()
+    
+    return text.strip().lower()
 
 def load_raw_wikipedia_dataset(
     language: str = "en", 
