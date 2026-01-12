@@ -47,6 +47,9 @@ def train_step(model, dataloader, optimizer, criterion, scaler, scheduler, devic
     
     num_batches = len(dataloader)
     start_time = time.time()
+    
+    running_loss = 0.0 
+    log_interval = 50
 
     for i, batch in enumerate(dataloader):
         input_ids = batch['input_ids'].to(device, non_blocking=True)
@@ -56,9 +59,14 @@ def train_step(model, dataloader, optimizer, criterion, scaler, scheduler, devic
         with torch.amp.autocast('cuda', enabled=Config.use_amp):
             outputs = model(input_ids, attention_mask)
             loss = criterion(outputs.view(-1, outputs.size(-1)), labels.view(-1))
-            loss = loss / accumulation_steps
+            
+            loss_scaled = loss / accumulation_steps
 
-        scaler.scale(loss).backward()
+        scaler.scale(loss_scaled).backward()
+
+        current_loss_val = loss.item()
+        total_loss += current_loss_val
+        running_loss += current_loss_val
 
         if (i + 1) % accumulation_steps == 0 or (i + 1) == num_batches:
             scaler.unscale_(optimizer)
@@ -69,18 +77,20 @@ def train_step(model, dataloader, optimizer, criterion, scaler, scheduler, devic
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
 
-        current_loss = loss.item() * accumulation_steps
-        total_loss += current_loss
-        
-        if rank == 0 and i % 50 == 0:
+        if rank == 0 and (i + 1) % log_interval == 0:
             elapsed = time.time() - start_time
             lr = scheduler.get_last_lr()[0]
+            
+            avg_running_loss = running_loss / log_interval
+            
             global_step = (epoch_idx - 1) * len(dataloader) + i
-            print(f"[Epoch {epoch_idx}][Step {i}/{num_batches}] Loss: {current_loss:.4f} | LR: {lr:.2e} ...")
+            print(f"[Epoch {epoch_idx}][Step {i+1}/{num_batches}] Loss: {avg_running_loss:.4f} | LR: {lr:.2e} | Time: {elapsed:.2f}s")
+            
             with open(log_path, 'a', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([global_step, epoch_idx, current_loss, lr])
+                writer.writerow([global_step, epoch_idx, avg_running_loss, lr])
 
+            running_loss = 0.0
             start_time = time.time()
             
     return total_loss / num_batches
@@ -178,12 +188,21 @@ def main_process(rank: int, world_size: int):
     else:
         model_without_ddp = model
 
-    optimizer = optim.AdamW(model.parameters(), lr=Config.lr, betas=(0.9, 0.999), weight_decay=Config.weight_decay)
+    optimizer = optim.AdamW(model.parameters(), lr=Config.lr, betas=(0.9, 0.999), eps=1e-6, weight_decay=Config.weight_decay)
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
     scaler = torch.amp.GradScaler('cuda', enabled=Config.use_amp)
     
-    total_steps = (len(train_loader) // Config.accumulation_steps) * Config.epochs
-    scheduler = get_linear_schedule_with_warmup(optimizer, Config.accumulation_steps, total_steps)
+    steps_per_epoch = len(train_loader) // Config.accumulation_steps
+    total_steps = steps_per_epoch * Config.epochs
+    
+    num_warmup_steps = int(0.1 * total_steps)
+    if num_warmup_steps < 100: num_warmup_steps = 100 
+    
+    if rank == 0:
+        print(f"Total optimization steps: {total_steps}")
+        print(f"Warmup steps: {num_warmup_steps}")
+
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, total_steps)
 
     train_log_path = os.path.join(Config.CHECKPOINT_DIR, "train_logs.csv")
     val_log_path = os.path.join(Config.CHECKPOINT_DIR, "val_logs.csv")
