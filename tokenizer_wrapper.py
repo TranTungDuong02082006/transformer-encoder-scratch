@@ -13,11 +13,9 @@ class TokenizerWrapper:
         self.mask_token_id = self.vocab.get(tk_lib.MASK_TOKEN, 4)
 
     def token_to_id(self, token):
-        """Chuyển đổi 1 token (string) sang ID (int)"""
         return self.vocab.get(token, self.unk_token_id)
 
     def id_to_token(self, idx):
-        """Chuyển đổi 1 ID (int) sang token (string)"""
         return self.processor.id_to_token.get(idx, tk_lib.UNK_TOKEN)
 
     def encode(self, text):
