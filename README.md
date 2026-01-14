@@ -1,2 +1,3 @@
 # Download model at here
 Model train by 2xT4 (Perplexity = 14.96): https://www.kaggle.com/datasets/trntngdng123/transfomer-encoder-from-scratch-2xt4gpu
+### Notation: Adjust the config to fit the model before testing.
